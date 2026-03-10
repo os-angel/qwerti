@@ -34,6 +34,7 @@ import { PluginRegistry } from "../plugins/plugin-registry.ts";
 import { SessionCommand } from "../commands/built-in/session-command.ts";
 import { ResumeCommand } from "../commands/built-in/resume-command.ts";
 import { ThemeCommand } from "../commands/built-in/theme-command.ts";
+import { DiscoveryCommand } from "../commands/built-in/discovery-command.ts";
 import { ThemeManager, themes } from "./theme.ts";
 import { KeybindingManager } from "./keybindings.ts";
 
@@ -48,6 +49,8 @@ import { ListDirTool } from "../tools/built-in/list-dir-tool.ts";
 import { EditFileTool } from "../tools/built-in/edit-file-tool.ts";
 import { GlobTool } from "../tools/built-in/glob-tool.ts";
 import { GrepTool } from "../tools/built-in/grep-tool.ts";
+import { HFDownloadTool } from "../tools/built-in/hf-download-tool.ts";
+import { HFSearchTool } from "../tools/built-in/hf-search-tool.ts";
 
 
 export function App() {
@@ -72,6 +75,8 @@ export function App() {
         tr.register(new EditFileTool());
         tr.register(new GlobTool());
         tr.register(new GrepTool());
+        tr.register(new HFDownloadTool());
+        tr.register(new HFSearchTool());
         return tr;
     });
     const [toolExecutor] = useState(() => new ToolExecutor(toolRegistry, bus));
@@ -90,6 +95,7 @@ export function App() {
         registry.register(new SessionCommand());
         registry.register(new ResumeCommand());
         registry.register(new ThemeCommand());
+        registry.register(new DiscoveryCommand());
         return registry;
     });
 
@@ -141,6 +147,20 @@ export function App() {
             if (active) {
                 setModel(active.name);
                 agentLoopRef.current = new AgentLoop(active, toolRegistry, toolExecutor, contextManager, skillRegistry, state.mode);
+                addMessage({
+                    id: "welcome",
+                    role: "assistant",
+                    content: `Hello! I'm ready to help using model \`${active.name}\`. How can I assist you today?`,
+                    timestamp: Date.now()
+                });
+            } else {
+                openDialog("add-wizard");
+                addMessage({
+                    id: "welcome-onboarding",
+                    role: "assistant",
+                    content: "Welcome to **Qwerti**! Since I couldn't find an active model configuration, I've opened the setup wizard for you.",
+                    timestamp: Date.now()
+                });
             }
         }
         init();

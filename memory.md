@@ -31,7 +31,13 @@
 
 ---
 
-## Próximos pasos: Fase 2 - Gestión de Modelos
-- Descarga directa de Hugging Face.
-- Auto-detección de backends (Ollama/Llama.cpp).
-- Registro de modelos mediante alias.
+5. **Resultado**: Exitoso. El agente puede buscar modelos GGUF, descargarlos y descubrir backends locales (Ollama/Llama.cpp).
+    - Se agregaron `HFDownloadTool`, `HFSearchTool`.
+    - Se agregó `DiscoveryService` y el comando `/discover`.
+    - Se resolvió el conflicto de `node_modules` en Git re-inicializando con un `.gitignore` robusto.
+
+---
+
+## 2026-03-10: Fase 3 - Mejoras en MCP y Skills (Próximo)
+- Soporte para MCP remotos y despliegue rápido.
+- Interfaz gráfica mejorada para el visor de logs.

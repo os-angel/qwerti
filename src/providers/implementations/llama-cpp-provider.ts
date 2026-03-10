@@ -191,7 +191,7 @@ export class LlamaCppProvider extends BaseProvider {
         try {
             const base = this.baseUrl.replace(/\/$/, "");
             const res = await fetch(`${base}/v1/models`);
-            const data = await res.json();
+            const data = await res.json() as { data: any[] };
             return data.data.map((m: any) => m.id);
         } catch {
             return [this.modelId];
@@ -204,6 +204,11 @@ export class LlamaCppProvider extends BaseProvider {
         }
         try {
             const base = this.baseUrl.replace(/\/$/, "");
+            // If it identifies as ollama (usually port 11434), try their native tags API first
+            if (this.baseUrl.includes(":11434")) {
+                const res = await fetch(`${base}/api/tags`);
+                if (res.ok) return true;
+            }
             const res = await fetch(`${base}/v1/models`);
             return res.ok;
         } catch {

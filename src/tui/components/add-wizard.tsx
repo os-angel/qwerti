@@ -20,6 +20,7 @@ export type AddWizardStep =
     | "hf-download-path"
     | "hf-downloading"
     | "verifying"
+    | "ollama-select-model"
     | "done";
 
 export interface AddWizardResult {
@@ -130,13 +131,35 @@ export function AddWizard({ onComplete, onCancel, theme, initialStep }: AddWizar
         else if (value === "cloud") setStep("select-cloud-provider");
         setSelection({ ...selection, modelType: value });
     };
-
     const handleSelectLocalSource = (value: string) => {
-        if (value === "gguf" || value === "ollama") {
+        if (value === "gguf") {
             setStep("configure-fields");
             setSelection({ ...selection, subType: value });
         } else if (value === "huggingface") {
             setStep("hf-select-model");
+        } else if (value === "ollama") {
+            setStep("verifying");
+            detectOllamaModels();
+        }
+    };
+
+    const detectOllamaModels = async () => {
+        setVerifyStatus("verifying");
+        try {
+            const res = await fetch("http://localhost:11434/api/tags");
+            if (!res.ok) throw new Error("Ollama not reachable");
+            const data = await res.json() as { models: any[] };
+            const items: SelectItem[] = data.models.map(m => ({
+                label: m.name,
+                value: m.name,
+                hint: `${(m.size / 1024 / 1024 / 1024).toFixed(2)} GB`
+            }));
+            const updatedSelection = { ...selection, subType: "ollama", ollamaModels: items };
+            setSelection(updatedSelection);
+            setStep("ollama-select-model" as any);
+        } catch (err: any) {
+            setVerifyStatus("error");
+            setVerifyError("Ollama failed: " + err.message + ". Make sure it's running.");
         }
     };
 
@@ -216,6 +239,17 @@ export function AddWizard({ onComplete, onCancel, theme, initialStep }: AddWizar
                             </Box>
                         )}
                     </Box>
+                );
+            case "ollama-select-model":
+                return (
+                    <SelectList
+                        title="Selecciona modelo de Ollama decubierto:"
+                        items={selection.ollamaModels || []}
+                        onSelect={(v: string) => {
+                            verifyAndComplete({ model: v, baseUrl: "http://localhost:11434" });
+                        }}
+                        onCancel={() => setStep("select-local-source")}
+                    />
                 );
             case "hf-select-model":
                 return <SelectList title="Selecciona modelo de HuggingFace:" items={HF_POPULAR_MODELS} onSelect={(v) => {

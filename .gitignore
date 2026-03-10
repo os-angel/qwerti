@@ -32,3 +32,5 @@ bun-debug.log*
 
 # Runtime
 .bun/
+node_modules/
+node_modules/
