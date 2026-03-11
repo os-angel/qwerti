@@ -5,7 +5,7 @@
 <h1 align="center">qwerti</h1>
 
 <p align="center">
-  Open-source agentic CLI platform built with the <strong>Autonomous R&D Agentic</strong> methodology.<br/>
+  Open-source agentic CLI platform built with the <strong>Auto Research</strong> methodology.<br/>
   Supports local models via Ollama/llama.cpp and cloud models via API configuration.<br/>
   Like Claude Code, but you bring your own model.
 </p>
