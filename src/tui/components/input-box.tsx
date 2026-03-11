@@ -124,7 +124,7 @@ export function InputBox({
                 />
             )}
             <Box paddingX={2} marginBottom={1}>
-                <Text color={theme.primary} bold>❯ </Text>
+                <Text color={disabled ? "gray" : theme.primary} bold>❯ </Text>
                 <Text color={disabled ? "gray" : "white"}>{input}</Text>
                 {!input && placeholder && <Text color="gray">{placeholder}</Text>}
                 {!disabled && <Text backgroundColor={theme.primary} color="black"> </Text>}

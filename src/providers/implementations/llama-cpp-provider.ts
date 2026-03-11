@@ -1,15 +1,18 @@
 import { BaseProvider, type ChatRequest, type StreamChunk } from "../base-provider.ts";
+import { logger } from "../../core/logger.ts";
 
 export class LlamaCppProvider extends BaseProvider {
     name: string;
     type = "llama-cpp" as const;
+    providerType: string;
     private baseUrl: string;
     private modelId: string;
     private apiKey?: string;
 
-    constructor(config: { name: string; baseUrl: string; model: string; apiKey?: string }) {
+    constructor(config: { name: string; type?: string; baseUrl: string; model: string; apiKey?: string }) {
         super();
         this.name = config.name;
+        this.providerType = config.type || "llama-cpp";
         this.baseUrl = config.baseUrl;
         this.modelId = config.model;
         this.apiKey = config.apiKey;
@@ -17,12 +20,23 @@ export class LlamaCppProvider extends BaseProvider {
 
     async *chat(request: ChatRequest): AsyncGenerator<StreamChunk> {
         const messages: any[] = [];
-
         if (request.systemPrompt) {
             messages.push({ role: "system", content: request.systemPrompt });
         }
 
-        for (const m of request.messages) {
+        const isLocal = this.baseUrl.includes(":11434") || 
+                       this.baseUrl.includes("localhost") || 
+                       this.baseUrl.includes("127.0.0.1") ||
+                       this.providerType === "ollama";
+
+        const isCloudType = ["azure", "databricks", "vertex", "bedrock"].includes(this.providerType);
+
+        let prunedMessages = request.messages;
+        if (isLocal && !isCloudType) {
+            prunedMessages = request.messages.slice(-5); // Keep slightly more for context
+        }
+
+        for (const m of prunedMessages) {
             if (m.role === "user") {
                 messages.push({ role: "user", content: m.content });
             } else if (m.role === "assistant") {
@@ -40,12 +54,27 @@ export class LlamaCppProvider extends BaseProvider {
                 messages.push(msg);
             } else if (m.role === "tool" && m.toolResults) {
                 for (const tr of m.toolResults) {
+                    let res = tr.result;
+                    if (tr.name === "list_dir" && isLocal && !isCloudType) {
+                        const lines = res.split("\n");
+                        const itemCount = lines.filter(line => line.trim().startsWith("[DIRECTORY]") || line.trim().startsWith("[FILE]")).length;
+                        if (itemCount > 0) {
+                            res = `[DIR_SUMMARY: ${itemCount} items]\n\n${res}`;
+                        }
+                    }
                     messages.push({
                         role: "tool",
                         tool_call_id: tr.callId,
-                        content: tr.result,
+                        content: res,
                     });
                 }
+            } else if (m.role === "tool" && (m as any).content) {
+                // Fallback for when content is provided directly
+                messages.push({
+                    role: "tool",
+                    tool_call_id: (m as any).tool_call_id || (m as any).id || "call_1",
+                    content: (m as any).content
+                });
             }
         }
 
@@ -64,7 +93,6 @@ export class LlamaCppProvider extends BaseProvider {
 
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (this.apiKey) {
-            // Azure OpenAI specifically uses api-key, fully compliant proxies use Bearer
             if (this.baseUrl.includes("openai.azure.com")) {
                 headers["api-key"] = this.apiKey;
             } else {
@@ -74,20 +102,20 @@ export class LlamaCppProvider extends BaseProvider {
 
         try {
             let url = "";
-
             const base = this.baseUrl.replace(/\/$/, "");
             if (this.baseUrl.includes("openai.azure.com")) {
-                // Remove /v1 if accidentally included by user for raw azure proxy
                 const cleanBase = base.replace(/\/v1$/, "");
                 url = `${cleanBase}/openai/deployments/${this.modelId}/chat/completions?api-version=2024-02-15-preview`;
+            } else if (this.providerType === "databricks") {
+                const host = base.split('/mlflow/v1')[0].split('/api/2.0')[0];
+                url = `${host}/serving-endpoints/${this.modelId}/invocations`;
             } else if (base.endsWith("/v1")) {
-                // Endpoint already includes /v1 (e.g., Databricks or Azure Foundry proxies)
                 url = `${base}/chat/completions`;
             } else {
                 url = `${base}/v1/chat/completions`;
             }
 
-            const response = await fetch(url, {
+            let response = await fetch(url, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(body),
@@ -95,49 +123,44 @@ export class LlamaCppProvider extends BaseProvider {
             });
 
             if (!response.ok) {
-                throw new Error(`llama-cpp error: ${response.statusText}`);
+                const errorBody = await response.text();
+                if (response.status === 400 && errorBody.includes("does not support tools") && body.tools) {
+                    delete body.tools;
+                    delete body.tool_choice;
+                    response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: request.signal });
+                } else {
+                    throw new Error(`Provider error: ${response.status} - ${errorBody}`);
+                }
             }
 
             const reader = response.body?.getReader();
             if (!reader) return;
-
             const decoder = new TextDecoder();
             let buffer = "";
-
-            const pendingToolCalls = new Map<number, {
-                id: string;
-                name: string;
-                arguments: string;
-            }>();
+            let assistantContentForFallback = "";
+            const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string; }>();
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split("\n");
                 buffer = lines.pop() || "";
-
                 for (const line of lines) {
-                    if (line.startsWith("data: ")) {
-                        const dataStr = line.slice(6).trim();
+                    const cleanLine = line.trim();
+                    if (cleanLine.startsWith("data: ")) {
+                        const dataStr = cleanLine.slice(6).trim();
                         if (dataStr === "[DONE]") break;
-
                         try {
                             const data = JSON.parse(dataStr);
-                            const delta = data.choices[0]?.delta;
-
+                            const delta = data.choices?.[0]?.delta;
                             if (delta?.content) {
-                                const contentStr = typeof delta.content === 'string'
-                                    ? delta.content
-                                    : JSON.stringify(delta.content);
-                                yield { type: "text", content: contentStr };
+                                assistantContentForFallback += delta.content;
+                                yield { type: "text", content: delta.content };
                             }
-
                             if (delta?.tool_calls) {
                                 for (const tc of delta.tool_calls) {
                                     const index = tc.index ?? 0;
-
                                     if (!pendingToolCalls.has(index)) {
                                         pendingToolCalls.set(index, {
                                             id: tc.id || `call_${Math.random().toString(36).substring(7)}`,
@@ -146,38 +169,50 @@ export class LlamaCppProvider extends BaseProvider {
                                         });
                                     } else {
                                         const existing = pendingToolCalls.get(index)!;
-                                        if (tc.function?.arguments) {
-                                            existing.arguments += tc.function.arguments;
-                                        }
+                                        if (tc.function?.arguments) existing.arguments += tc.function.arguments;
                                     }
                                 }
                             }
-                        } catch (e) {
-                            // Ignore parse errors from partial chunks
-                        }
+                        } catch (e) { }
                     }
+                }
+            }
+
+            if (pendingToolCalls.size === 0 && assistantContentForFallback.includes("{")) {
+                const blockRegex = /```(?:json|tool_code|bash|python|typescript|javascript)?\s*([\s\S]*?)\s*```|(\{[^{}]*"name"[^{}]*"args"[^{}]*\})/g;
+                let match;
+                let fallbackIndex = 0;
+                while ((match = blockRegex.exec(assistantContentForFallback)) !== null) {
+                    try {
+                        const raw = (match[1] || match[2]).trim();
+                        let parsed;
+                        try { parsed = JSON.parse(raw); } catch {
+                            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                            if (jsonMatch) { try { parsed = JSON.parse(jsonMatch[0]); } catch { } }
+                        }
+                        if (parsed && (parsed.name || parsed.function)) {
+                            const name = parsed.name || (typeof parsed.function === 'string' ? parsed.function : parsed.function?.name);
+                            const args = parsed.args || parsed.arguments || (parsed.function?.arguments ? (typeof parsed.function.arguments === 'string' ? JSON.parse(parsed.function.arguments) : parsed.function.arguments) : {});
+                            if (name) {
+                                pendingToolCalls.set(fallbackIndex++, {
+                                    id: `call_parsed_${Math.random().toString(36).substring(7)}`,
+                                    name: name.trim(),
+                                    arguments: JSON.stringify(args),
+                                });
+                            }
+                        }
+                    } catch { }
                 }
             }
 
             for (const [_, tc] of pendingToolCalls) {
                 try {
                     const parsedArgs = JSON.parse(tc.arguments);
-                    yield {
-                        type: "tool_call",
-                        toolCall: {
-                            id: tc.id,
-                            name: tc.name,
-                            args: parsedArgs,
-                        },
-                    };
-                } catch (parseErr) {
-                    yield {
-                        type: "error",
-                        error: `Failed to parse tool call arguments for ${tc.name}: ${tc.arguments}`,
-                    };
+                    yield { type: "tool_call", toolCall: { id: tc.id, name: tc.name, args: parsedArgs } };
+                } catch {
+                    yield { type: "error", error: `Failed to parse tool call arguments for ${tc.name}` };
                 }
             }
-
         } catch (error: any) {
             if (error.name === "AbortError") return;
             yield { type: "error", error: error.message };
@@ -185,34 +220,10 @@ export class LlamaCppProvider extends BaseProvider {
     }
 
     async listModels(): Promise<string[]> {
-        if (this.baseUrl.includes("openai.azure.com") || this.baseUrl.includes("databricks") || this.baseUrl.includes("mcpfabric")) {
-            return [this.modelId];
-        }
-        try {
-            const base = this.baseUrl.replace(/\/$/, "");
-            const res = await fetch(`${base}/v1/models`);
-            const data = await res.json() as { data: any[] };
-            return data.data.map((m: any) => m.id);
-        } catch {
-            return [this.modelId];
-        }
+        return [this.modelId];
     }
 
     async healthCheck(): Promise<boolean> {
-        if (this.baseUrl.includes("openai.azure.com") || this.baseUrl.includes("databricks") || this.baseUrl.includes("mcpfabric")) {
-            return true;
-        }
-        try {
-            const base = this.baseUrl.replace(/\/$/, "");
-            // If it identifies as ollama (usually port 11434), try their native tags API first
-            if (this.baseUrl.includes(":11434")) {
-                const res = await fetch(`${base}/api/tags`);
-                if (res.ok) return true;
-            }
-            const res = await fetch(`${base}/v1/models`);
-            return res.ok;
-        } catch {
-            return false;
-        }
+        return true;
     }
 }

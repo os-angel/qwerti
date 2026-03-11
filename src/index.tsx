@@ -33,7 +33,7 @@ program
 
         // Initialize core systems
         const eventBus = new EventBus();
-        const toolRegistry = new ToolRegistry(eventBus);
+        const toolRegistry = new ToolRegistry();
         const mcpManager = new MCPManager(eventBus, toolRegistry);
 
         const activeProvider = globalConfig.getActiveProvider();
@@ -50,7 +50,7 @@ program
             try {
                 await mcpManager.addServer(config);
                 logger.info({ name: config.name }, "MCP server connected");
-            } catch (error) {
+            } catch (error: any) {
                 logger.error({ name: config.name, error: error.message }, "Failed to connect MCP server");
             }
         }
@@ -66,21 +66,17 @@ program
 
             const { ModelRegistry } = await import("./providers/model-registry.ts");
             const { ToolExecutor } = await import("./tools/tool-executor.ts");
-            
+
             // Initialize model registry and executor with MCP tools
-            const modelRegistry = new ModelRegistry(globalConfig, eventBus);
+            const modelRegistry = new ModelRegistry();
+            await modelRegistry.init(globalConfig);
             const toolExecutor = new ToolExecutor(toolRegistry, eventBus);
 
             // Your eval mode implementation here...
             logger.info("Eval mode implementation needed");
         } else {
             // Interactive TUI mode
-            render(<App 
-                globalConfig={globalConfig} 
-                workspaceConfig={workspaceConfig}
-                toolRegistry={toolRegistry}
-                mcpManager={mcpManager}
-            />);
+            render(<App />);
         }
     });
 

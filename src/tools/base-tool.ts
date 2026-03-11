@@ -25,12 +25,16 @@ export abstract class BaseTool {
     abstract execute(args: any): Promise<ToolResult>;
 
     toDefinition(): ToolDefinition {
+        const schema = zodToJsonSchema(this.parameters) as any;
+        // Clean up schema for OpenAI/Ollama compatibility
+        if (schema.$schema) delete schema.$schema;
+
         return {
             type: "function",
             function: {
                 name: this.name,
                 description: this.description,
-                parameters: zodToJsonSchema(this.parameters) as Record<string, unknown>,
+                parameters: schema,
             },
         };
     }

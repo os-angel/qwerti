@@ -123,8 +123,11 @@ export function App() {
     }, []);
 
     const closeDialog = useCallback(() => {
-        setActiveDialog(null);
-        setDialogStack(prev => prev.slice(0, -1));
+        setDialogStack(prev => {
+            const next = prev.slice(0, -1);
+            setActiveDialog(next.length > 0 ? next[next.length - 1] : null);
+            return next;
+        });
     }, []);
 
     // Initialization
@@ -241,8 +244,27 @@ export function App() {
 
             let assistantId = "";
             let fullContent = "";
+            let initialThinkingId = Math.random().toString(36).substring(7);
+
+            // Show initial "Thinking..." message
+            addMessage({
+                id: initialThinkingId,
+                role: "assistant",
+                content: "Thinking...",
+                timestamp: Date.now(),
+            });
 
             for await (const event of agentLoopRef.current.run(text)) {
+                // Remove initial thinking on first event
+                if (initialThinkingId) {
+                    // We'll replace it with the actual content/tool call
+                    updateMessage(initialThinkingId, "");
+                    // Using empty string to mark it for replacement later
+                    // Or we could have a way to 'delete' but let's just reuse the ID
+                    assistantId = initialThinkingId;
+                    initialThinkingId = "";
+                }
+
                 switch (event.type) {
                     case "text":
                         if (!assistantId) {
@@ -331,6 +353,11 @@ export function App() {
 
         const action = keybindingManager.getAction(keyStr);
         if (!action) return;
+
+        // Guard: Most actions are disabled while a dialog is open
+        if (activeDialog && action !== "navigateBack") {
+            return;
+        }
 
         switch (action) {
             case "cycleTheme":
@@ -441,7 +468,7 @@ export function App() {
                 />
                 <InputBox
                     onSubmit={handleSubmit}
-                    disabled={state.isProcessing}
+                    disabled={state.isProcessing || !!activeDialog}
                     placeholder="Ask a question or type '/' for commands..."
                     suggestions={filteredSuggestions}
                     onSuggestionsRequest={handleSuggestionsRequest}
@@ -516,6 +543,7 @@ export function App() {
                     onClose={closeDialog}
                 />
             )}
+
         </Box>
     );
 }

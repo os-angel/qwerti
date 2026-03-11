@@ -26,7 +26,9 @@ export function SelectList<T>({ title, items, onSelect, onCancel }: SelectListPr
 
         if (key.upArrow) setSelectedIndex(i => Math.max(0, i - 1));
         if (key.downArrow) setSelectedIndex(i => Math.min(items.length - 1, i + 1));
-        if (key.return) onSelect(items[selectedIndex].value);
+        if (key.return && items.length > 0) {
+            onSelect(items[selectedIndex].value);
+        }
     });
 
     return (

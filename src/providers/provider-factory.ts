@@ -27,6 +27,7 @@ export class ProviderFactory {
                 // Full implementations will come in future phases
                 return new LlamaCppProvider({
                     name: config.name,
+                    type: config.type,
                     baseUrl: config.baseUrl || config.endpoint || "http://localhost:8080",
                     model: config.model,
                     apiKey: config.apiKey

@@ -75,12 +75,61 @@ export class AgentLoop {
                     }
                 }
 
+                // FALLBACK: Parse tool calls from text
+                if (currentToolCalls.length === 0) {
+                    const blockRegex = /```(?:json|tool_code|bash|python|typescript|javascript)?\s*([\s\S]*?)\s*```|(\{[^{}]*"name"[^{}]*"args"[^{}]*\})/g;
+                    let match;
+                    while ((match = blockRegex.exec(assistantContent)) !== null) {
+                        try {
+                            const raw = (match[1] || match[2]).trim();
+                            let parsed;
+                            
+                            // Try JSON
+                            try {
+                                parsed = JSON.parse(raw);
+                            } catch {
+                                // Try Extracting JSON
+                                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                                if (jsonMatch) {
+                                    try {
+                                        parsed = JSON.parse(jsonMatch[0]);
+                                    } catch {}
+                                }
+                            }
+
+                            if (parsed && (parsed.name || parsed.function)) {
+                                const toolName = parsed.name || (typeof parsed.function === 'string' ? parsed.function : parsed.function?.name);
+                                const toolArgs = parsed.args || parsed.arguments || (parsed.function?.arguments ? (typeof parsed.function.arguments === 'string' ? JSON.parse(parsed.function.arguments) : parsed.function.arguments) : {});
+                                
+                                if (toolName) {
+                                    const tName = toolName.trim();
+                                    console.log(`[AgentLoop] Parsed tool call from block:`, tName);
+                                    currentToolCalls.push({
+                                        id: `call_parsed_${Math.random().toString(36).substring(7)}`,
+                                        name: tName,
+                                        args: toolArgs,
+                                    });
+                                }
+                            } else if (raw.toLowerCase().includes("list_dir")) {
+                                // Heuristic for models that just output tool names
+                                console.log(`[AgentLoop] Heuristic parsed list_dir from block`);
+                                currentToolCalls.push({
+                                    id: `call_parsed_h_${Math.random().toString(36).substring(7)}`,
+                                    name: "list_dir",
+                                    args: {},
+                                });
+                            }
+                        } catch (e) {
+                            // Ignore
+                        }
+                    }
+                }
+
                 // Check for tool calls
                 if (currentToolCalls.length > 0) {
-                    // Add assistant message with tool calls to context
-                    const assistantMsgId = Math.random().toString(36).substring(7);
+                    // Save assistant message to context
                     this.context.addMessage({
-                        id: assistantMsgId,
+                        id: Math.random().toString(36).substring(7),
                         role: "assistant",
                         content: assistantContent,
                         timestamp: Date.now(),
@@ -90,8 +139,7 @@ export class AgentLoop {
                     // Execute tool calls
                     const toolResults: ToolResult[] = [];
                     for (const tc of currentToolCalls) {
-                        yield { type: "tool_start", name: tc.name, args: tc.args };
-
+                        console.log(`[AgentLoop] Executing Tool: ${tc.name} with args:`, tc.args);
                         const result = await this.toolExecutor.execute(tc.name, tc.args);
 
                         const toolResult: ToolResult = {
@@ -102,6 +150,7 @@ export class AgentLoop {
                         };
                         toolResults.push(toolResult);
 
+                        console.log(`[AgentLoop] Tool Result (${tc.name}):`, toolResult.result.substring(0, 100) + "...");
                         yield {
                             type: "tool_result",
                             name: tc.name,
@@ -110,11 +159,23 @@ export class AgentLoop {
                         };
                     }
 
-                    // Add tool results to context
+                    // Add combined tool results to context
                     this.context.addMessage({
                         id: Math.random().toString(36).substring(7),
                         role: "tool",
-                        content: toolResults.map(r => r.result).join("\n---\n"), // Standard content for simple providers
+                        content: toolResults.map(tr => {
+                            let res = tr.result;
+                            // Add extra counting info if it's a list_dir result
+                            if (tr.name === "list_dir") {
+                                // Match markers like "[DIRECTORY] .git" or "[FILE] package.json"
+                                const lines = res.split("\n");
+                                const itemCount = lines.filter(line => line.trim().startsWith("[DIRECTORY]") || line.trim().startsWith("[FILE]")).length;
+                                if (itemCount > 0) {
+                                    res = `[SUMMARY: FOUND ${itemCount} ITEMS TOTAL]\n\n${res}`;
+                                }
+                            }
+                            return `[RESULT FOR ${tr.name}]:\n${res}`;
+                        }).join("\n\n---\n\n") + "\n\nPlease provide your final answer based on the results above.",
                         timestamp: Date.now(),
                         toolResults: toolResults,
                     });
@@ -122,13 +183,15 @@ export class AgentLoop {
                     // Loop back to let the assistant see the tool results
                     continueLoop = true;
                 } else {
-                    // Final response
-                    this.context.addMessage({
-                        id: Math.random().toString(36).substring(7),
-                        role: "assistant",
-                        content: assistantContent,
-                        timestamp: Date.now(),
-                    });
+                    // Final response (only if not empty)
+                    if (assistantContent.trim()) {
+                        this.context.addMessage({
+                            id: Math.random().toString(36).substring(7),
+                            role: "assistant",
+                            content: assistantContent,
+                            timestamp: Date.now(),
+                        });
+                    }
                     yield { type: "done" };
                 }
             } catch (error: any) {

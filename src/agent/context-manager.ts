@@ -8,7 +8,7 @@ export class ContextManager {
     private messages: Message[] = [];
     private options: ContextOptions;
 
-    constructor(options: ContextOptions = { maxTokensEstimate: 32_000 }) {
+    constructor(options: ContextOptions = { maxTokensEstimate: 4096 }) {
         this.options = options;
     }
 

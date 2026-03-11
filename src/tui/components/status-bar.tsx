@@ -17,19 +17,34 @@ export function StatusBar({ error, cwd, theme, model, provider, mode }: StatusBa
 
     return (
         <Box
-            paddingX={2}
+            paddingX={1}
             width="100%"
             justifyContent="space-between"
-            marginBottom={0}
+            borderStyle="single"
+            borderTop={true}
+            borderBottom={false}
+            borderLeft={false}
+            borderRight={false}
+            borderColor={theme.textDim}
         >
             <Box>
-                <Text color={theme.textDim}>{shortPath} | </Text>
-                {model && <Text color={theme.textDim}>{model} @ {provider} | </Text>}
-                <Text color={mode === "build" ? theme.success : theme.warning}>{mode}</Text>
+                <Text color={theme.textDim}> 📁 {shortPath}  </Text>
+                <Text color={theme.textDim} dimColor> | </Text>
+                {model && (
+                    <Box>
+                        <Text color={theme.textDim}> 🤖 {model} </Text>
+                        <Text color={theme.textDim} dimColor> | </Text>
+                    </Box>
+                )}
+                <Text color={mode === "build" ? theme.accent : theme.warning} bold> {mode.toUpperCase()} </Text>
             </Box>
-            <Text color={error ? theme.error : theme.success}>
-                {error || "Ready"}
-            </Text>
+            <Box>
+                {error ? (
+                    <Text color={theme.error}> ⚠️ {error} </Text>
+                ) : (
+                    <Text color={theme.success} dimColor> ● Connected </Text>
+                )}
+            </Box>
         </Box>
     );
 }

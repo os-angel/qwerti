@@ -1,0 +1,79 @@
+[
+    {
+        "id": "EXP-001",
+        "timestamp": "2026-03-10T12:20:00Z",
+        "objective": "Validar ciclo de terminal (Crear -> Listar -> Borrar)",
+        "worker": "AgentLoop + FileTools",
+        "metric": "Success Rate",
+        "before": "0%",
+        "after": "100%",
+        "status": "Success",
+        "insight": "El modelo 0.8b mapea correctamente las herramientas tras limpiar el esquema JSON. La latencia de respuesta es aceptable para flujos locales."
+    },
+    {
+        "id": "EXP-002",
+        "timestamp": "2026-03-10T12:25:00Z",
+        "objective": "Corregir bloqueo de comando /models y mejorar foco TUI",
+        "worker": "TUI (App + InputBox + Dialogs)",
+        "metric": "Interaction Reliability",
+        "before": "Stuck/Low",
+        "after": "High/Fixed",
+        "status": "Success",
+        "insight": "La interferencia del InputBox causaba que Ink no dirigiera correctamente los eventos a los diálogos o que el usuario viera un cursor distractor. La corrección del stack de diálogos previene estados inconsistentes."
+    },
+    {
+        "id": "EXP-003",
+        "timestamp": "2026-03-10T12:35:00Z",
+        "objective": "Reducir latencia de respuesta en modelos locales (0.8b)",
+        "worker": "system-prompt.ts + llama-cpp-provider.ts",
+        "metric": "Time to First Action",
+        "before": "Slow (High Chatter)",
+        "after": "Fast (Concise)",
+        "status": "Success",
+        "insight": "Reducir max_tokens y añadir stop sequences evita que los modelos pequeños divaguen o generen preámbulos innecesarios. Las directrices de concisión en el system prompt obligan al modelo a ir directo a las herramientas."
+    },
+    {
+        "id": "EXP-004",
+        "timestamp": "2026-03-10T12:45:00Z",
+        "objective": "Prevenir degradación de latencia por saturación de contexto histórico",
+        "worker": "LlamaCppProvider + ContextManager",
+        "metric": "TTFT (Time To First Token) a lo largo de la sesión",
+        "before": "> 30s (en sesiones medias)",
+        "after": "~ 3-5s (constante)",
+        "status": "Success",
+        "insight": "Se descubrió que Ollama recalculaba iterativamente la ventana de contexto completa (historial largo + definiciones de herramientas), lo que hundía el rendimiento en modelos de pocos recursos de hardware. Restringir la carga semántica a los últimos 3 mensajes en LlamaCppProvider.chat() estabiliza la latencia para backends locales que usan la capa OpenAI de Ollama."
+    },
+    {
+        "id": "EXP-005",
+        "timestamp": "2026-03-10T13:10:00Z",
+        "objective": "Solucionar error de 'healthcheck failed' en modelos de 4B o mayores",
+        "worker": "LlamaCppProvider",
+        "metric": "Healthcheck Success Rate en Cold Start",
+        "before": "0% para modelos 4B+",
+        "after": "100%",
+        "status": "Success",
+        "insight": "El timeout de 3 segundos en el heatlhCheck() era demasiado corto para permitir que modelos más pesados o que no estuvieran cacheados (como qwen3:4b y gemma3:4b) se cargaran exitosamente en memoria/VRAM durante un cold start. Aumentar el timeout de 3000ms a 15000ms absorbe correctamente el overhead del arranque en frío de Ollama."
+    },
+    {
+        "id": "EXP-006",
+        "timestamp": "2026-03-10T13:20:00Z",
+        "objective": "Prevenir bloqueos (Bad Request) al enviar tools a modelos que no lo soportan (ej. gemma3:4b) en Ollama",
+        "worker": "LlamaCppProvider",
+        "metric": "Error resillience on fallback",
+        "before": "Crash (Error 400 does not support tools)",
+        "after": "Graceful fallback a plain-text chat",
+        "status": "Success",
+        "insight": "Algunos modelos locales empaquetados por Ollama (como gemma3:4b) no tienen implementada la capa de compatibilidad OpenAI para Tool Calling. Qwerti ahora captura proactivamente el status 400 detectando la frase 'does not support tools', y automáticamente re-envía el payload pelado (sin la configuración de `tools`), permitiendo que la iteración de UI continúe fluidamente sin expulsar al usuario de su sesión. Los modelos de alto nivel como qwen3:4b si retienen soporte pleno."
+    },
+    {
+        "id": "EXP-007",
+        "timestamp": "2026-03-10T18:55:00Z",
+        "objective": "Registro y uso de modelo Databricks via AI Gateway",
+        "worker": "llama-cpp-provider.ts + provider-factory.ts",
+        "metric": "Success Rate (Registro + Chat + Tool Call)",
+        "before": "0/3",
+        "after": "3/3",
+        "status": "Success",
+        "insight": "Se corrigió la poda agresiva de historial que afectaba a proveedores cloud basándose erróneamente en el tipo de provider base. Además, se implementó el parseo de objetos de razonamiento ('reasoning summaries') que Databricks envía dentro de delta.content, permitiendo una experiencia de chat limpia en la UI."
+    }
+]
