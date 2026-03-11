@@ -154,9 +154,26 @@ export class LlamaCppProvider extends BaseProvider {
                         try {
                             const data = JSON.parse(dataStr);
                             const delta = data.choices?.[0]?.delta;
+                            // Handle content: direct text from the model
                             if (delta?.content) {
-                                assistantContentForFallback += delta.content;
-                                yield { type: "text", content: delta.content };
+                                // Databricks sends content as array of objects [{type:"reasoning",summary:[...]}]
+                                const contentStr = typeof delta.content === "string"
+                                    ? delta.content
+                                    : Array.isArray(delta.content)
+                                        ? delta.content.map((c: any) => typeof c === "string" ? c : c.text || "").join("")
+                                        : String(delta.content);
+                                if (contentStr) {
+                                    assistantContentForFallback += contentStr;
+                                    yield { type: "text", content: contentStr };
+                                }
+                            }
+                            // Handle reasoning: Qwen3/3.5 thinking models put all output here
+                            if (delta?.reasoning && !delta?.content) {
+                                const reasoningStr = typeof delta.reasoning === "string" ? delta.reasoning : "";
+                                if (reasoningStr) {
+                                    assistantContentForFallback += reasoningStr;
+                                    yield { type: "text", content: reasoningStr };
+                                }
                             }
                             if (delta?.tool_calls) {
                                 for (const tc of delta.tool_calls) {

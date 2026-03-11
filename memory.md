@@ -133,7 +133,23 @@
 
 ---
 
-## Próximos Pasos (Fase 3 - Mejoras en MCP y Skills)
-- Soporte para MCP remotos y despliegue rápido.
-- Interfaz gráfica mejorada para el visor de logs.
-- Refactorización de la gestión de skills.
+## 2026-03-10: Soporte para Modelos Thinking (Qwen3/3.5) (EXP-009)
+
+1. **Objetivo**: Hacer que todos los modelos registrados (Ollama + Databricks) respondan correctamente en chat y tool calling.
+2. **Worker**: `src/providers/implementations/llama-cpp-provider.ts`.
+3. **Acciones**:
+    - Se descubrio que los modelos Qwen3 y Qwen3.5 de Ollama operan por defecto en modo "thinking": toda la generacion va al campo `delta.reasoning` del streaming, dejando `delta.content` vacio.
+    - El `LlamaCppProvider` solo leia `delta.content`, por lo que estos modelos parecian no responder.
+    - Se agrego lectura de `delta.reasoning` en el parser de streaming: cuando `content` esta vacio y `reasoning` tiene texto, se emite el reasoning como texto visible.
+    - Se agrego manejo de `delta.content` como array (para Databricks que envia objetos de razonamiento).
+    - Se corrigio la URL de Databricks en `~/.qwerti/config.json` (estaba apuntando a `dbc-...` en vez de `ai-gateway...`).
+4. **Resultado**: 4/4 modelos funcionan (qwen3.5:0.8b, qwen3:4b, gemma3:4b, databricks-gpt-oss-120b). Todos responden a chat y ejecutan `list_dir` correctamente.
+5. **Insight**: Los modelos "thinking" (Qwen3, DeepSeek-R1, etc.) son cada vez mas comunes. Cualquier provider que consuma la API OpenAI-compat de Ollama DEBE parsear `delta.reasoning` ademas de `delta.content`. La API nativa de Ollama permite `think:false`, pero la compat OpenAI no tiene equivalente.
+
+---
+
+## Proximos Pasos (Fase 3 - Mejoras en MCP y Skills)
+- Soporte para MCP remotos y despliegue rapido.
+- Interfaz grafica mejorada para el visor de logs.
+- Refactorizacion de la gestion de skills.
+- Considerar agregar opcion para desactivar thinking en modelos Qwen (via API nativa de Ollama con `think:false`).

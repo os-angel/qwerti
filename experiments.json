@@ -75,5 +75,16 @@
         "after": "3/3",
         "status": "Success",
         "insight": "Se corrigió la poda agresiva de historial que afectaba a proveedores cloud basándose erróneamente en el tipo de provider base. Además, se implementó el parseo de objetos de razonamiento ('reasoning summaries') que Databricks envía dentro de delta.content, permitiendo una experiencia de chat limpia en la UI."
+    },
+    {
+        "id": "EXP-009",
+        "timestamp": "2026-03-10T21:30:00Z",
+        "objective": "Hacer que todos los modelos registrados respondan en chat y tool calling",
+        "worker": "LlamaCppProvider (streaming parser)",
+        "metric": "Model Response Rate (Chat + Tool Call)",
+        "before": "1/4 (solo gemma3:4b respondia)",
+        "after": "4/4 (qwen3.5:0.8b, qwen3:4b, gemma3:4b, databricks)",
+        "status": "Success",
+        "insight": "Los modelos Qwen3/3.5 de Ollama operan en modo 'thinking' por defecto: envian delta.reasoning en vez de delta.content. El provider solo leia content, ignorando reasoning. Se agrego lectura de delta.reasoning cuando content esta vacio. Tambien se corrigio la URL de Databricks en config y se agrego parsing de content como array (formato Databricks). La API OpenAI-compat de Ollama no soporta think:false, por lo que la unica opcion es leer el campo reasoning."
     }
 ]
